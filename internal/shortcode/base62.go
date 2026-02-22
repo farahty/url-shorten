@@ -3,7 +3,7 @@ package shortcode
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 func Encode(num int64) string {
-	if num == 0 {
+	if num <= 0 {
 		return string(alphabet[0])
 	}
 

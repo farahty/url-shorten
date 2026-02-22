@@ -3,10 +3,12 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/farahty/url-shorten/internal/config"
+	"github.com/farahty/url-shorten/internal/middleware"
 	"github.com/farahty/url-shorten/internal/model"
 	"github.com/farahty/url-shorten/internal/repository"
 	"github.com/farahty/url-shorten/internal/service"
@@ -23,14 +25,18 @@ func NewLinkHandler(svc *service.LinkService, cfg *config.Config) *LinkHandler {
 }
 
 func resolveBaseURL(r *http.Request, cfg *config.Config) string {
-	if baseURL, ok := r.Context().Value("app_base_url").(string); ok && baseURL != "" {
+	if baseURL, ok := r.Context().Value(middleware.AppBaseURLKey).(string); ok && baseURL != "" {
 		return baseURL
 	}
 	return cfg.BaseURL
 }
 
 func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
-	apiKeyID := r.Context().Value("api_key_id").(string)
+	apiKeyID, ok := r.Context().Value(middleware.APIKeyIDKey).(string)
+	if !ok || apiKeyID == "" {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 10*1024) // 10KB limit
 	var req model.CreateLinkRequest
@@ -53,6 +59,8 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "invalid alias: must be 1-32 alphanumeric/hyphen/underscore characters and not a reserved word", http.StatusBadRequest)
 		case errors.Is(err, service.ErrAliasConflict):
 			jsonError(w, "alias already taken", http.StatusConflict)
+		case errors.Is(err, service.ErrExpiryTooLong):
+			jsonError(w, "expires_in exceeds maximum of 1 year (31536000 seconds)", http.StatusBadRequest)
 		default:
 			jsonError(w, "internal server error", http.StatusInternalServerError)
 		}
@@ -118,22 +126,27 @@ func (h *LinkHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *LinkHandler) List(w http.ResponseWriter, r *http.Request) {
-	apiKeyID := r.Context().Value("api_key_id").(string)
+	apiKeyID, ok := r.Context().Value(middleware.APIKeyIDKey).(string)
+	if !ok || apiKeyID == "" {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	links, total, err := h.svc.List(r.Context(), apiKeyID, page, limit)
-	if err != nil {
-		jsonError(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
+	// Validate before calling service
 	if page < 1 {
 		page = 1
 	}
 	if limit < 1 || limit > 100 {
 		limit = 20
+	}
+
+	links, total, err := h.svc.List(r.Context(), apiKeyID, page, limit)
+	if err != nil {
+		jsonError(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	baseURL := resolveBaseURL(r, h.cfg)
@@ -164,7 +177,11 @@ func (h *LinkHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *LinkHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
-	apiKeyID := r.Context().Value("api_key_id").(string)
+	apiKeyID, ok := r.Context().Value(middleware.APIKeyIDKey).(string)
+	if !ok || apiKeyID == "" {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	err := h.svc.Delete(r.Context(), code, apiKeyID)
 	if err != nil {
@@ -182,11 +199,15 @@ func (h *LinkHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func jsonResponse(w http.ResponseWriter, data interface{}, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("error encoding JSON response: %v", err)
+	}
 }
 
 func jsonError(w http.ResponseWriter, msg string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		log.Printf("error encoding JSON error response: %v", err)
+	}
 }

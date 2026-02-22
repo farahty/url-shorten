@@ -16,4 +16,6 @@ COPY migrations/ /migrations/
 
 EXPOSE 8080
 
+USER nobody
+
 CMD ["/server"]

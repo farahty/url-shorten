@@ -19,11 +19,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const maxExpirySeconds int64 = 365 * 24 * 3600 // 1 year
+
 var (
 	ErrInvalidURL    = errors.New("invalid URL")
 	ErrInvalidAlias  = errors.New("invalid alias")
 	ErrAliasConflict = errors.New("alias already taken")
 	ErrLinkExpired   = errors.New("link has expired")
+	ErrExpiryTooLong = errors.New("expiry exceeds maximum of 1 year")
 
 	aliasPattern  = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 	reservedCodes = map[string]bool{
@@ -107,6 +110,9 @@ func (s *LinkService) Create(ctx context.Context, req model.CreateLinkRequest, a
 	}
 
 	if req.ExpiresIn != nil && *req.ExpiresIn > 0 {
+		if *req.ExpiresIn > maxExpirySeconds {
+			return nil, ErrExpiryTooLong
+		}
 		exp := time.Now().Add(time.Duration(*req.ExpiresIn) * time.Second)
 		link.ExpiresAt = &exp
 	}

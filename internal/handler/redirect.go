@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/farahty/url-shorten/internal/config"
+	"github.com/farahty/url-shorten/internal/middleware"
 	"github.com/farahty/url-shorten/internal/repository"
 	"github.com/farahty/url-shorten/internal/service"
 	"github.com/go-chi/chi/v5"
@@ -47,7 +48,7 @@ func NewRedirectHandler(svc *service.LinkService, cfg *config.Config) *RedirectH
 
 func (h *RedirectHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
-	isCrawler := r.Context().Value("is_crawler").(bool)
+	isCrawler, _ := r.Context().Value(middleware.IsCrawlerKey).(bool)
 
 	if isCrawler {
 		h.serveCrawler(w, r, code)

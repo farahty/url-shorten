@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -18,12 +19,59 @@ type OGScraper struct {
 	maxBody int64
 }
 
+// isPrivateIP returns true if the IP belongs to a private, loopback, or reserved range.
+func isPrivateIP(ip net.IP) bool {
+	privateRanges := []net.IPNet{
+		{IP: net.IPv4(10, 0, 0, 0), Mask: net.CIDRMask(8, 32)},
+		{IP: net.IPv4(172, 16, 0, 0), Mask: net.CIDRMask(12, 32)},
+		{IP: net.IPv4(192, 168, 0, 0), Mask: net.CIDRMask(16, 32)},
+		{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},
+		{IP: net.IPv4(169, 254, 0, 0), Mask: net.CIDRMask(16, 32)},  // link-local
+		{IP: net.IPv4(0, 0, 0, 0), Mask: net.CIDRMask(8, 32)},       // current network
+		{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)},    // shared address space (CGN)
+		{IP: net.IPv4(192, 0, 0, 0), Mask: net.CIDRMask(24, 32)},     // IETF protocol assignments
+		{IP: net.IPv4(198, 18, 0, 0), Mask: net.CIDRMask(15, 32)},    // benchmark testing
+		{IP: net.IPv4(224, 0, 0, 0), Mask: net.CIDRMask(4, 32)},      // multicast
+		{IP: net.IPv4(240, 0, 0, 0), Mask: net.CIDRMask(4, 32)},      // reserved
+	}
+
+	for _, r := range privateRanges {
+		if r.Contains(ip) {
+			return true
+		}
+	}
+
+	// Block IPv6 loopback and link-local
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+
+	return false
+}
+
 func NewOGScraper(timeout time.Duration, maxBody int64) *OGScraper {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	transport := &http.Transport{
 		MaxIdleConns:        10,
 		IdleConnTimeout:     30 * time.Second,
 		DisableKeepAlives:   true,
 		TLSHandshakeTimeout: 5 * time.Second,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if isPrivateIP(ip.IP) {
+					return nil, errors.New("connections to private/reserved IP ranges are not allowed")
+				}
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+		},
 	}
 	client := &http.Client{
 		Timeout:   timeout,

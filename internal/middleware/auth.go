@@ -14,7 +14,11 @@ import (
 
 type contextKey string
 
-const APIKeyIDKey contextKey = "api_key_id"
+const (
+	APIKeyIDKey    contextKey = "api_key_id"
+	AppBaseURLKey  contextKey = "app_base_url"
+	IsCrawlerKey   contextKey = "is_crawler"
+)
 
 func APIKeyAuth(repo *repository.LinkRepository) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -39,9 +43,9 @@ func APIKeyAuth(repo *repository.LinkRepository) func(http.Handler) http.Handler
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), "api_key_id", key.ID)
+			ctx := context.WithValue(r.Context(), APIKeyIDKey, key.ID)
 			if key.BaseURL != nil {
-				ctx = context.WithValue(ctx, "app_base_url", *key.BaseURL)
+				ctx = context.WithValue(ctx, AppBaseURLKey, *key.BaseURL)
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

@@ -18,6 +18,8 @@ import (
 	"github.com/farahty/url-shorten/internal/service"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/go-chi/httprate"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -70,6 +72,17 @@ func main() {
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RealIP)
+	r.Use(chimw.Timeout(30 * time.Second))
+
+	// CORS
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key"},
+		ExposedHeaders:   []string{"Content-Length"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
 
 	// Admin routes (protected by admin secret)
 	r.Route("/admin", func(r chi.Router) {
@@ -91,8 +104,11 @@ func main() {
 		r.Get("/links/{code}/qr", qrHandler.GetQR)
 	})
 
-	// Public redirect route
-	r.With(middleware.CrawlerDetection).Get("/{code}", redirectHandler.Redirect)
+	// Public redirect route with rate limiting
+	r.With(
+		httprate.LimitByIP(100, time.Minute),
+		middleware.CrawlerDetection,
+	).Get("/{code}", redirectHandler.Redirect)
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

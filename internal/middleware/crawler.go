@@ -28,7 +28,7 @@ func CrawlerDetection(next http.Handler) http.Handler {
 			}
 		}
 
-		ctx := context.WithValue(r.Context(), "is_crawler", isCrawler)
+		ctx := context.WithValue(r.Context(), IsCrawlerKey, isCrawler)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
