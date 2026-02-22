@@ -63,12 +63,22 @@ func main() {
 	linkHandler := handler.NewLinkHandler(linkService, cfg)
 	redirectHandler := handler.NewRedirectHandler(linkService, cfg)
 	qrHandler := handler.NewQRHandler(linkService, cfg)
+	adminHandler := handler.NewAdminHandler(repo)
 
 	// Router
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RealIP)
+
+	// Admin routes (protected by admin secret)
+	r.Route("/admin", func(r chi.Router) {
+		r.Use(middleware.AdminAuth(cfg.AdminSecret))
+
+		r.Post("/api-keys", adminHandler.CreateAPIKey)
+		r.Get("/api-keys", adminHandler.ListAPIKeys)
+		r.Delete("/api-keys/{id}", adminHandler.DeactivateAPIKey)
+	})
 
 	// API routes (authenticated)
 	r.Route("/api/v1", func(r chi.Router) {

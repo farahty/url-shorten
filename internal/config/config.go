@@ -20,6 +20,8 @@ type Config struct {
 
 	OGScrapeTimeout time.Duration
 	OGScrapeMaxBody int64
+
+	AdminSecret string
 }
 
 func Load() *Config {
@@ -33,6 +35,7 @@ func Load() *Config {
 		ClickFlushInterval: time.Duration(getEnvInt("CLICK_FLUSH_INTERVAL", 5)) * time.Second,
 		OGScrapeTimeout:    time.Duration(getEnvInt("OG_SCRAPE_TIMEOUT", 5)) * time.Second,
 		OGScrapeMaxBody:    int64(getEnvInt("OG_SCRAPE_MAX_BODY", 1048576)),
+		AdminSecret:        getEnv("ADMIN_SECRET", ""),
 	}
 }
 

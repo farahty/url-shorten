@@ -13,6 +13,7 @@ services:
       - CLICK_FLUSH_INTERVAL=5
       - OG_SCRAPE_TIMEOUT=5
       - OG_SCRAPE_MAX_BODY=1048576
+      - ADMIN_SECRET=${ADMIN_SECRET:-change-me-to-a-strong-secret}
     depends_on:
       postgres:
         condition: service_healthy

@@ -129,6 +129,51 @@ func (r *LinkRepository) GetAPIKeyByHash(ctx context.Context, keyHash string) (*
 	return key, err
 }
 
+func (r *LinkRepository) CreateAPIKey(ctx context.Context, keyHash, appName string) (*model.APIKey, error) {
+	key := &model.APIKey{}
+	err := r.db.QueryRow(ctx,
+		`INSERT INTO api_keys (key_hash, app_name)
+		 VALUES ($1, $2)
+		 RETURNING id, key_hash, app_name, is_active, created_at, updated_at`,
+		keyHash, appName,
+	).Scan(&key.ID, &key.KeyHash, &key.AppName, &key.IsActive, &key.CreatedAt, &key.UpdatedAt)
+	return key, err
+}
+
+func (r *LinkRepository) ListAPIKeys(ctx context.Context) ([]model.APIKey, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, app_name, is_active, created_at, updated_at
+		 FROM api_keys ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []model.APIKey
+	for rows.Next() {
+		var k model.APIKey
+		if err := rows.Scan(&k.ID, &k.AppName, &k.IsActive, &k.CreatedAt, &k.UpdatedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+func (r *LinkRepository) DeactivateAPIKey(ctx context.Context, id string) error {
+	tag, err := r.db.Exec(ctx,
+		"UPDATE api_keys SET is_active = false, updated_at = now() WHERE id = $1", id,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *LinkRepository) CodeExists(ctx context.Context, code string) (bool, error) {
 	var exists bool
 	err := r.db.QueryRow(ctx,
