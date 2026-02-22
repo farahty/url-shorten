@@ -44,7 +44,7 @@ func (h *QRHandler) GetQR(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	shortURL := h.cfg.BaseURL + "/" + code
+	shortURL := resolveBaseURL(r, h.cfg) + "/" + code
 	png, err := qrcode.Encode(shortURL, qrcode.Medium, size)
 	if err != nil {
 		jsonError(w, "failed to generate QR code", http.StatusInternalServerError)

@@ -84,8 +84,13 @@ func (h *RedirectHandler) serveCrawler(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 
+	baseURL := h.cfg.BaseURL
+	if link.AppBaseURL != nil && *link.AppBaseURL != "" {
+		baseURL = *link.AppBaseURL
+	}
+
 	data := ogTemplateData{
-		ShortURL:    fmt.Sprintf("%s/%s", h.cfg.BaseURL, code),
+		ShortURL:    fmt.Sprintf("%s/%s", baseURL, code),
 		OriginalURL: link.OriginalURL,
 	}
 

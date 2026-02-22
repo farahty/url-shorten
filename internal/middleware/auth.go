@@ -40,6 +40,9 @@ func APIKeyAuth(repo *repository.LinkRepository) func(http.Handler) http.Handler
 			}
 
 			ctx := context.WithValue(r.Context(), "api_key_id", key.ID)
+			if key.BaseURL != nil {
+				ctx = context.WithValue(ctx, "app_base_url", *key.BaseURL)
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

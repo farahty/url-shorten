@@ -15,12 +15,14 @@ type Link struct {
 	OGImage     *string    `json:"og_image,omitempty"`
 	OGSite      *string    `json:"og_site,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+	AppBaseURL  *string    `json:"-"` // populated via JOIN with api_keys
 }
 
 type APIKey struct {
 	ID        string    `json:"id"`
 	KeyHash   string    `json:"-"`
 	AppName   string    `json:"app_name"`
+	BaseURL   *string   `json:"base_url,omitempty"`
 	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -68,18 +70,21 @@ type ListLinksResponse struct {
 
 type CreateAPIKeyRequest struct {
 	AppName string `json:"app_name"`
+	BaseURL string `json:"base_url,omitempty"`
 }
 
 type CreateAPIKeyResponse struct {
 	ID        string    `json:"id"`
 	APIKey    string    `json:"api_key"`
 	AppName   string    `json:"app_name"`
+	BaseURL   string    `json:"base_url,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type APIKeyInfoResponse struct {
 	ID        string    `json:"id"`
 	AppName   string    `json:"app_name"`
+	BaseURL   string    `json:"base_url,omitempty"`
 	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

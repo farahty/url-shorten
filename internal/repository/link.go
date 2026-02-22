@@ -39,13 +39,15 @@ func (r *LinkRepository) Create(ctx context.Context, link *model.Link) error {
 func (r *LinkRepository) GetByCode(ctx context.Context, code string) (*model.Link, error) {
 	link := &model.Link{}
 	err := r.db.QueryRow(ctx,
-		`SELECT id, code, original_url, is_alias, expires_at, click_count, api_key_id,
-		        og_title, og_desc, og_image, og_site, created_at
-		 FROM links WHERE code = $1`, code,
+		`SELECT l.id, l.code, l.original_url, l.is_alias, l.expires_at, l.click_count, l.api_key_id,
+		        l.og_title, l.og_desc, l.og_image, l.og_site, l.created_at, a.base_url
+		 FROM links l
+		 LEFT JOIN api_keys a ON a.id = l.api_key_id
+		 WHERE l.code = $1`, code,
 	).Scan(
 		&link.ID, &link.Code, &link.OriginalURL, &link.IsAlias, &link.ExpiresAt,
 		&link.ClickCount, &link.APIKeyID, &link.OGTitle, &link.OGDesc,
-		&link.OGImage, &link.OGSite, &link.CreatedAt,
+		&link.OGImage, &link.OGSite, &link.CreatedAt, &link.AppBaseURL,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -120,29 +122,29 @@ func (r *LinkRepository) IncrementClickCount(ctx context.Context, codes []string
 func (r *LinkRepository) GetAPIKeyByHash(ctx context.Context, keyHash string) (*model.APIKey, error) {
 	key := &model.APIKey{}
 	err := r.db.QueryRow(ctx,
-		`SELECT id, key_hash, app_name, is_active, created_at, updated_at
+		`SELECT id, key_hash, app_name, base_url, is_active, created_at, updated_at
 		 FROM api_keys WHERE key_hash = $1`, keyHash,
-	).Scan(&key.ID, &key.KeyHash, &key.AppName, &key.IsActive, &key.CreatedAt, &key.UpdatedAt)
+	).Scan(&key.ID, &key.KeyHash, &key.AppName, &key.BaseURL, &key.IsActive, &key.CreatedAt, &key.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return key, err
 }
 
-func (r *LinkRepository) CreateAPIKey(ctx context.Context, keyHash, appName string) (*model.APIKey, error) {
+func (r *LinkRepository) CreateAPIKey(ctx context.Context, keyHash, appName string, baseURL *string) (*model.APIKey, error) {
 	key := &model.APIKey{}
 	err := r.db.QueryRow(ctx,
-		`INSERT INTO api_keys (key_hash, app_name)
-		 VALUES ($1, $2)
-		 RETURNING id, key_hash, app_name, is_active, created_at, updated_at`,
-		keyHash, appName,
-	).Scan(&key.ID, &key.KeyHash, &key.AppName, &key.IsActive, &key.CreatedAt, &key.UpdatedAt)
+		`INSERT INTO api_keys (key_hash, app_name, base_url)
+		 VALUES ($1, $2, $3)
+		 RETURNING id, key_hash, app_name, base_url, is_active, created_at, updated_at`,
+		keyHash, appName, baseURL,
+	).Scan(&key.ID, &key.KeyHash, &key.AppName, &key.BaseURL, &key.IsActive, &key.CreatedAt, &key.UpdatedAt)
 	return key, err
 }
 
 func (r *LinkRepository) ListAPIKeys(ctx context.Context) ([]model.APIKey, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id, app_name, is_active, created_at, updated_at
+		`SELECT id, app_name, base_url, is_active, created_at, updated_at
 		 FROM api_keys ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -153,7 +155,7 @@ func (r *LinkRepository) ListAPIKeys(ctx context.Context) ([]model.APIKey, error
 	var keys []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.AppName, &k.IsActive, &k.CreatedAt, &k.UpdatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.AppName, &k.BaseURL, &k.IsActive, &k.CreatedAt, &k.UpdatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)

@@ -33,10 +33,12 @@ This starts the Go app on `:8080`, PostgreSQL on `:5432`, and Redis on `:6379`. 
 curl -s -X POST http://localhost:8080/admin/api-keys \
   -H "Authorization: Bearer change-me-to-a-strong-secret" \
   -H "Content-Type: application/json" \
-  -d '{"app_name": "my-app"}' | jq
+  -d '{"app_name": "my-app", "base_url": "https://sho.rt"}' | jq
 ```
 
 Save the `api_key` from the response — it is only shown once.
+
+The optional `base_url` field sets a custom domain for this app's short links. If omitted, the global `BASE_URL` is used.
 
 ### Shorten a URL
 
@@ -73,9 +75,15 @@ POST /admin/api-keys
 
 ```json
 {
-  "app_name": "my-app"
+  "app_name": "my-app",
+  "base_url": "https://sho.rt"
 }
 ```
+
+| Field      | Type   | Required | Description                                              |
+|------------|--------|----------|----------------------------------------------------------|
+| `app_name` | string | yes      | Name of the application                                  |
+| `base_url` | string | no       | Custom domain for short links (falls back to `BASE_URL`) |
 
 **Response (201):**
 
@@ -84,6 +92,7 @@ POST /admin/api-keys
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "api_key": "a1b2c3d4e5f6...",
   "app_name": "my-app",
+  "base_url": "https://sho.rt",
   "created_at": "2025-02-22T10:00:00Z"
 }
 ```
@@ -103,6 +112,7 @@ GET /admin/api-keys
   {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "app_name": "my-app",
+    "base_url": "https://sho.rt",
     "is_active": true,
     "created_at": "2025-02-22T10:00:00Z",
     "updated_at": "2025-02-22T10:00:00Z"
@@ -235,7 +245,7 @@ All settings are configured via environment variables (or a `.env` file):
 | Variable               | Default                  | Description                          |
 |------------------------|--------------------------|--------------------------------------|
 | `PORT`                 | `8080`                   | Server port                          |
-| `BASE_URL`             | `http://localhost:8080`  | Public base URL for short links      |
+| `BASE_URL`             | `http://localhost:8080`  | Default base URL (overridden per app via `base_url`) |
 | `ADMIN_SECRET`         | (none)                   | Bearer token for admin endpoints     |
 | `DATABASE_URL`         | `postgres://...`         | PostgreSQL connection string         |
 | `REDIS_URL`            | `redis://localhost:6379` | Redis connection string              |
@@ -266,7 +276,9 @@ url-shorten/
 │   ├── service/link.go          # Business logic + async click counter
 │   ├── scraper/og.go            # OG metadata scraper
 │   └── shortcode/base62.go      # Base62 encoding
-├── migrations/001_init.sql      # Database schema
+├── migrations/
+│   ├── 001_init.sql             # Database schema
+│   └── 002_add_base_url.sql     # Per-app custom domains
 ├── Dockerfile                   # Multi-stage build
 ├── docker-compose.yml           # App + Postgres + Redis
 └── .env.example                 # Config template
@@ -281,3 +293,4 @@ url-shorten/
 - **API keys hashed with SHA-256** — raw keys are never stored. Only shown once at creation time.
 - **OG scrape at creation time** — metadata is fetched once and stored in the DB, avoiding latency on redirect and preventing repeated requests to the original site.
 - **Constant-time admin secret comparison** — prevents timing-based attacks on the admin endpoint.
+- **Per-app custom domains** — each API key can have its own `base_url`. Short links, QR codes, and OG meta tags use the app's domain when set, falling back to the global `BASE_URL`.

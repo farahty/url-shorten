@@ -22,6 +22,13 @@ func NewLinkHandler(svc *service.LinkService, cfg *config.Config) *LinkHandler {
 	return &LinkHandler{svc: svc, cfg: cfg}
 }
 
+func resolveBaseURL(r *http.Request, cfg *config.Config) string {
+	if baseURL, ok := r.Context().Value("app_base_url").(string); ok && baseURL != "" {
+		return baseURL
+	}
+	return cfg.BaseURL
+}
+
 func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	apiKeyID := r.Context().Value("api_key_id").(string)
 
@@ -49,9 +56,10 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	baseURL := resolveBaseURL(r, h.cfg)
 	resp := model.CreateLinkResponse{
 		Code:        link.Code,
-		ShortURL:    h.cfg.BaseURL + "/" + link.Code,
+		ShortURL:    baseURL + "/" + link.Code,
 		OriginalURL: link.OriginalURL,
 		ExpiresAt:   link.ExpiresAt,
 		QRURL:       "/api/v1/links/" + link.Code + "/qr",
@@ -95,7 +103,7 @@ func (h *LinkHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	resp := model.LinkInfoResponse{
 		Code:        link.Code,
-		ShortURL:    h.cfg.BaseURL + "/" + link.Code,
+		ShortURL:    resolveBaseURL(r, h.cfg) + "/" + link.Code,
 		OriginalURL: link.OriginalURL,
 		ClickCount:  link.ClickCount,
 		IsAlias:     link.IsAlias,
@@ -125,11 +133,12 @@ func (h *LinkHandler) List(w http.ResponseWriter, r *http.Request) {
 		limit = 20
 	}
 
+	baseURL := resolveBaseURL(r, h.cfg)
 	var items []model.LinkInfoResponse
 	for _, l := range links {
 		items = append(items, model.LinkInfoResponse{
 			Code:        l.Code,
-			ShortURL:    h.cfg.BaseURL + "/" + l.Code,
+			ShortURL:    baseURL + "/" + l.Code,
 			OriginalURL: l.OriginalURL,
 			ClickCount:  l.ClickCount,
 			IsAlias:     l.IsAlias,

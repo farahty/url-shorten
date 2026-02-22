@@ -45,18 +45,28 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	hash := sha256.Sum256([]byte(apiKey))
 	keyHash := hex.EncodeToString(hash[:])
 
-	key, err := h.repo.CreateAPIKey(r.Context(), keyHash, req.AppName)
+	var baseURL *string
+	if req.BaseURL != "" {
+		baseURL = &req.BaseURL
+	}
+
+	key, err := h.repo.CreateAPIKey(r.Context(), keyHash, req.AppName, baseURL)
 	if err != nil {
 		jsonError(w, "failed to create API key", http.StatusInternalServerError)
 		return
 	}
 
-	jsonResponse(w, model.CreateAPIKeyResponse{
+	resp := model.CreateAPIKeyResponse{
 		ID:        key.ID,
 		APIKey:    apiKey,
 		AppName:   key.AppName,
 		CreatedAt: key.CreatedAt,
-	}, http.StatusCreated)
+	}
+	if key.BaseURL != nil {
+		resp.BaseURL = *key.BaseURL
+	}
+
+	jsonResponse(w, resp, http.StatusCreated)
 }
 
 func (h *AdminHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
@@ -68,13 +78,17 @@ func (h *AdminHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 	var items []model.APIKeyInfoResponse
 	for _, k := range keys {
-		items = append(items, model.APIKeyInfoResponse{
+		info := model.APIKeyInfoResponse{
 			ID:        k.ID,
 			AppName:   k.AppName,
 			IsActive:  k.IsActive,
 			CreatedAt: k.CreatedAt,
 			UpdatedAt: k.UpdatedAt,
-		})
+		}
+		if k.BaseURL != nil {
+			info.BaseURL = *k.BaseURL
+		}
+		items = append(items, info)
 	}
 
 	if items == nil {
