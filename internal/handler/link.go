@@ -1,0 +1,180 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+
+	"github.com/farahty/url-shorten/internal/config"
+	"github.com/farahty/url-shorten/internal/model"
+	"github.com/farahty/url-shorten/internal/repository"
+	"github.com/farahty/url-shorten/internal/service"
+	"github.com/go-chi/chi/v5"
+)
+
+type LinkHandler struct {
+	svc *service.LinkService
+	cfg *config.Config
+}
+
+func NewLinkHandler(svc *service.LinkService, cfg *config.Config) *LinkHandler {
+	return &LinkHandler{svc: svc, cfg: cfg}
+}
+
+func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
+	apiKeyID := r.Context().Value("api_key_id").(string)
+
+	var req model.CreateLinkRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.URL == "" {
+		jsonError(w, "url is required", http.StatusBadRequest)
+		return
+	}
+
+	link, err := h.svc.Create(r.Context(), req, apiKeyID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidURL):
+			jsonError(w, "invalid URL", http.StatusBadRequest)
+		case errors.Is(err, service.ErrAliasConflict):
+			jsonError(w, "alias already taken", http.StatusConflict)
+		default:
+			jsonError(w, "internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	resp := model.CreateLinkResponse{
+		Code:        link.Code,
+		ShortURL:    h.cfg.BaseURL + "/" + link.Code,
+		OriginalURL: link.OriginalURL,
+		ExpiresAt:   link.ExpiresAt,
+		QRURL:       "/api/v1/links/" + link.Code + "/qr",
+		CreatedAt:   link.CreatedAt,
+	}
+
+	if link.OGTitle != nil || link.OGDesc != nil || link.OGImage != nil || link.OGSite != nil {
+		resp.OG = &model.OGData{}
+		if link.OGTitle != nil {
+			resp.OG.Title = *link.OGTitle
+		}
+		if link.OGDesc != nil {
+			resp.OG.Description = *link.OGDesc
+		}
+		if link.OGImage != nil {
+			resp.OG.Image = *link.OGImage
+		}
+		if link.OGSite != nil {
+			resp.OG.SiteName = *link.OGSite
+		}
+	}
+
+	jsonResponse(w, resp, http.StatusCreated)
+}
+
+func (h *LinkHandler) Get(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+
+	link, err := h.svc.GetByCode(r.Context(), code)
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+			jsonError(w, "link not found", http.StatusNotFound)
+		case errors.Is(err, service.ErrLinkExpired):
+			jsonError(w, "link has expired", http.StatusGone)
+		default:
+			jsonError(w, "internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	resp := model.LinkInfoResponse{
+		Code:        link.Code,
+		ShortURL:    h.cfg.BaseURL + "/" + link.Code,
+		OriginalURL: link.OriginalURL,
+		ClickCount:  link.ClickCount,
+		IsAlias:     link.IsAlias,
+		ExpiresAt:   link.ExpiresAt,
+		CreatedAt:   link.CreatedAt,
+	}
+
+	jsonResponse(w, resp, http.StatusOK)
+}
+
+func (h *LinkHandler) List(w http.ResponseWriter, r *http.Request) {
+	apiKeyID := r.Context().Value("api_key_id").(string)
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	links, total, err := h.svc.List(r.Context(), apiKeyID, page, limit)
+	if err != nil {
+		jsonError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+
+	var items []model.LinkInfoResponse
+	for _, l := range links {
+		items = append(items, model.LinkInfoResponse{
+			Code:        l.Code,
+			ShortURL:    h.cfg.BaseURL + "/" + l.Code,
+			OriginalURL: l.OriginalURL,
+			ClickCount:  l.ClickCount,
+			IsAlias:     l.IsAlias,
+			ExpiresAt:   l.ExpiresAt,
+			CreatedAt:   l.CreatedAt,
+		})
+	}
+
+	if items == nil {
+		items = []model.LinkInfoResponse{}
+	}
+
+	jsonResponse(w, model.ListLinksResponse{
+		Links: items,
+		Total: total,
+		Page:  page,
+		Limit: limit,
+	}, http.StatusOK)
+}
+
+func (h *LinkHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	apiKeyID := r.Context().Value("api_key_id").(string)
+
+	err := h.svc.Delete(r.Context(), code, apiKeyID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			jsonError(w, "link not found", http.StatusNotFound)
+			return
+		}
+		jsonError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func jsonResponse(w http.ResponseWriter, data interface{}, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+func jsonError(w http.ResponseWriter, msg string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
