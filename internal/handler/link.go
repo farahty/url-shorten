@@ -32,6 +32,7 @@ func resolveBaseURL(r *http.Request, cfg *config.Config) string {
 func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	apiKeyID := r.Context().Value("api_key_id").(string)
 
+	r.Body = http.MaxBytesReader(w, r.Body, 10*1024) // 10KB limit
 	var req model.CreateLinkRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -48,6 +49,8 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, service.ErrInvalidURL):
 			jsonError(w, "invalid URL", http.StatusBadRequest)
+		case errors.Is(err, service.ErrInvalidAlias):
+			jsonError(w, "invalid alias: must be 1-32 alphanumeric/hyphen/underscore characters and not a reserved word", http.StatusBadRequest)
 		case errors.Is(err, service.ErrAliasConflict):
 			jsonError(w, "alias already taken", http.StatusConflict)
 		default:

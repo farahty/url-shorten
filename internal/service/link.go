@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,8 +21,14 @@ import (
 
 var (
 	ErrInvalidURL    = errors.New("invalid URL")
+	ErrInvalidAlias  = errors.New("invalid alias")
 	ErrAliasConflict = errors.New("alias already taken")
 	ErrLinkExpired   = errors.New("link has expired")
+
+	aliasPattern  = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	reservedCodes = map[string]bool{
+		"health": true, "admin": true, "api": true,
+	}
 )
 
 type LinkService struct {
@@ -30,6 +37,7 @@ type LinkService struct {
 	scraper *scraper.OGScraper
 	cfg     *config.Config
 	clickCh chan string
+	done    chan struct{}
 }
 
 func NewLinkService(
@@ -44,9 +52,16 @@ func NewLinkService(
 		scraper: scraper,
 		cfg:     cfg,
 		clickCh: make(chan string, cfg.ClickBufferSize),
+		done:    make(chan struct{}),
 	}
 	go s.clickFlusher()
 	return s
+}
+
+// Stop flushes remaining clicks and stops the background goroutine.
+func (s *LinkService) Stop() {
+	close(s.clickCh)
+	<-s.done
 }
 
 func (s *LinkService) Create(ctx context.Context, req model.CreateLinkRequest, apiKeyID string) (*model.Link, error) {
@@ -66,6 +81,12 @@ func (s *LinkService) Create(ctx context.Context, req model.CreateLinkRequest, a
 	isAlias := false
 
 	if req.Alias != "" {
+		if len(req.Alias) > 32 || !aliasPattern.MatchString(req.Alias) {
+			return nil, ErrInvalidAlias
+		}
+		if reservedCodes[req.Alias] {
+			return nil, ErrInvalidAlias
+		}
 		exists, err := s.repo.CodeExists(ctx, req.Alias)
 		if err != nil {
 			return nil, fmt.Errorf("checking alias: %w", err)
@@ -107,6 +128,9 @@ func (s *LinkService) Create(ctx context.Context, req model.CreateLinkRequest, a
 	}
 
 	if err := s.repo.Create(ctx, link); err != nil {
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			return nil, ErrAliasConflict
+		}
 		return nil, fmt.Errorf("creating link: %w", err)
 	}
 
@@ -143,10 +167,19 @@ func (s *LinkService) Delete(ctx context.Context, code, apiKeyID string) error {
 	return nil
 }
 
+func (s *LinkService) recordClick(code string) {
+	select {
+	case s.clickCh <- code:
+	default:
+		// Channel full — drop the click rather than blocking the request
+		log.Printf("click buffer full, dropping click for code: %s", code)
+	}
+}
+
 func (s *LinkService) Resolve(ctx context.Context, code string) (string, error) {
 	// Try cache first
 	if url, err := s.cache.Get(ctx, code); err == nil {
-		s.clickCh <- code
+		s.recordClick(code)
 		return url, nil
 	} else if !errors.Is(err, redis.Nil) {
 		log.Printf("redis cache error: %v", err)
@@ -162,10 +195,17 @@ func (s *LinkService) Resolve(ctx context.Context, code string) (string, error) 
 		return "", ErrLinkExpired
 	}
 
-	// Cache for future lookups
-	_ = s.cache.Set(ctx, code, link.OriginalURL)
+	// Cache with TTL capped to link expiry
+	cacheTTL := s.cfg.RedisCacheTTL
+	if link.ExpiresAt != nil {
+		remaining := time.Until(*link.ExpiresAt)
+		if remaining < cacheTTL {
+			cacheTTL = remaining
+		}
+	}
+	_ = s.cache.SetWithTTL(ctx, code, link.OriginalURL, cacheTTL)
 
-	s.clickCh <- code
+	s.recordClick(code)
 	return link.OriginalURL, nil
 }
 
@@ -177,11 +217,13 @@ func (s *LinkService) ResolveForCrawler(ctx context.Context, code string) (*mode
 	if link.ExpiresAt != nil && link.ExpiresAt.Before(time.Now()) {
 		return nil, ErrLinkExpired
 	}
-	s.clickCh <- code
+	s.recordClick(code)
 	return link, nil
 }
 
 func (s *LinkService) clickFlusher() {
+	defer close(s.done)
+
 	ticker := time.NewTicker(s.cfg.ClickFlushInterval)
 	defer ticker.Stop()
 
@@ -189,7 +231,14 @@ func (s *LinkService) clickFlusher() {
 
 	for {
 		select {
-		case code := <-s.clickCh:
+		case code, ok := <-s.clickCh:
+			if !ok {
+				// Channel closed — flush remaining and exit
+				if len(buffer) > 0 {
+					s.flushClicks(buffer)
+				}
+				return
+			}
 			buffer = append(buffer, code)
 			if len(buffer) >= s.cfg.ClickBufferSize {
 				s.flushClicks(buffer)

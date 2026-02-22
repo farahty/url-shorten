@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -12,25 +13,42 @@ import (
 )
 
 type OGScraper struct {
+	client  *http.Client
 	timeout time.Duration
 	maxBody int64
 }
 
 func NewOGScraper(timeout time.Duration, maxBody int64) *OGScraper {
-	return &OGScraper{timeout: timeout, maxBody: maxBody}
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableKeepAlives:   true,
+		TLSHandshakeTimeout: 5 * time.Second,
+	}
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return errors.New("too many redirects")
+			}
+			return nil
+		},
+	}
+	return &OGScraper{client: client, timeout: timeout, maxBody: maxBody}
 }
 
-func (s *OGScraper) Scrape(ctx context.Context, url string) *model.OGData {
+func (s *OGScraper) Scrape(ctx context.Context, rawURL string) *model.OGData {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; URLShortener/1.0)")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil
 	}

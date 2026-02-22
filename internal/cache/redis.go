@@ -24,6 +24,10 @@ func (c *RedisCache) Set(ctx context.Context, code, url string) error {
 	return c.client.Set(ctx, "link:"+code, url, c.ttl).Err()
 }
 
+func (c *RedisCache) SetWithTTL(ctx context.Context, code, url string, ttl time.Duration) error {
+	return c.client.Set(ctx, "link:"+code, url, ttl).Err()
+}
+
 func (c *RedisCache) Delete(ctx context.Context, code string) error {
 	return c.client.Del(ctx, "link:"+code).Err()
 }

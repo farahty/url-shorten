@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/farahty/url-shorten/internal/model"
 	"github.com/farahty/url-shorten/internal/repository"
@@ -22,6 +24,7 @@ func NewAdminHandler(repo *repository.LinkRepository) *AdminHandler {
 }
 
 func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10*1024) // 10KB limit
 	var req model.CreateAPIKeyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -31,6 +34,16 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.AppName == "" {
 		jsonError(w, "app_name is required", http.StatusBadRequest)
 		return
+	}
+
+	// Validate base_url if provided
+	if req.BaseURL != "" {
+		u, err := url.Parse(req.BaseURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			jsonError(w, "base_url must be a valid http/https URL", http.StatusBadRequest)
+			return
+		}
+		req.BaseURL = strings.TrimRight(req.BaseURL, "/")
 	}
 
 	// Generate a random 32-byte API key
