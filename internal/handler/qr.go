@@ -56,7 +56,13 @@ func (h *QRHandler) serveQR(w http.ResponseWriter, r *http.Request, code string)
 	}
 
 	shortURL := resolveBaseURL(r, h.cfg) + "/" + code
-	png, err := qrcode.Encode(shortURL, qrcode.Medium, size)
+	qr, err := qrcode.New(shortURL, qrcode.Medium)
+	if err != nil {
+		jsonError(w, "failed to generate QR code", http.StatusInternalServerError)
+		return
+	}
+	qr.DisableBorder = true
+	png, err := qr.PNG(size)
 	if err != nil {
 		jsonError(w, "failed to generate QR code", http.StatusInternalServerError)
 		return
