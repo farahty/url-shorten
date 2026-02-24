@@ -62,6 +62,7 @@ curl -L http://localhost:8080/2Bi
 - **Admin routes** (`/admin/*`): `Authorization: Bearer <ADMIN_SECRET>` header
 - **API routes** (`/api/v1/*`): `X-API-Key: <key>` header
 - **Redirect** (`/{code}`): No auth required
+- **Public QR** (`/{code}.qr`): No auth required
 
 ---
 
@@ -160,7 +161,7 @@ POST /api/v1/links
   "short_url": "http://localhost:8080/2BjL",
   "original_url": "https://example.com/very/long/path",
   "expires_at": "2025-03-01T12:00:00Z",
-  "qr_url": "/api/v1/links/2BjL/qr",
+  "qr_url": "/2BjL.qr",
   "og": {
     "title": "Example Page Title",
     "description": "A description from the original page",
@@ -214,6 +215,22 @@ GET /api/v1/links/{code}/qr?size=256
 ```
 
 Returns a `image/png` QR code. Size in pixels (default 256, max 1024).
+
+---
+
+### Public QR Code
+
+```
+GET /{code}.qr?size=256
+```
+
+Returns a `image/png` QR code for any short link — no authentication required. Size in pixels (default 256, max 1024).
+
+**Example:**
+
+```bash
+curl -o qr.png http://localhost:8080/2BjL.qr?size=512
+```
 
 ---
 

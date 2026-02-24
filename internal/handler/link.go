@@ -73,7 +73,7 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ShortURL:    baseURL + "/" + link.Code,
 		OriginalURL: link.OriginalURL,
 		ExpiresAt:   link.ExpiresAt,
-		QRURL:       "/api/v1/links/" + link.Code + "/qr",
+		QRURL:       "/" + link.Code + ".qr",
 		CreatedAt:   link.CreatedAt,
 	}
 

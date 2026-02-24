@@ -104,6 +104,11 @@ func main() {
 		r.Get("/links/{code}/qr", qrHandler.GetQR)
 	})
 
+	// Public QR code route
+	r.With(
+		httprate.LimitByIP(100, time.Minute),
+	).Get("/{code}.qr", qrHandler.GetQRPublic)
+
 	// Public redirect route with rate limiting
 	r.With(
 		httprate.LimitByIP(100, time.Minute),

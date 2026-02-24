@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/farahty/url-shorten/internal/config"
 	"github.com/farahty/url-shorten/internal/repository"
@@ -21,8 +22,18 @@ func NewQRHandler(svc *service.LinkService, cfg *config.Config) *QRHandler {
 	return &QRHandler{svc: svc, cfg: cfg}
 }
 
+func (h *QRHandler) GetQRPublic(w http.ResponseWriter, r *http.Request) {
+	codeWithExt := chi.URLParam(r, "code")
+	code := strings.TrimSuffix(codeWithExt, ".qr")
+	h.serveQR(w, r, code)
+}
+
 func (h *QRHandler) GetQR(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
+	h.serveQR(w, r, code)
+}
+
+func (h *QRHandler) serveQR(w http.ResponseWriter, r *http.Request, code string) {
 
 	_, err := h.svc.GetByCode(r.Context(), code)
 	if err != nil {
