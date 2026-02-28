@@ -36,6 +36,14 @@ func (r *LinkRepository) Create(ctx context.Context, link *model.Link) error {
 	return err
 }
 
+func (r *LinkRepository) UpdateOGData(ctx context.Context, code string, title, desc, image, site *string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE links SET og_title=$1, og_desc=$2, og_image=$3, og_site=$4 WHERE code=$5`,
+		title, desc, image, site, code,
+	)
+	return err
+}
+
 func (r *LinkRepository) GetByCode(ctx context.Context, code string) (*model.Link, error) {
 	link := &model.Link{}
 	err := r.db.QueryRow(ctx,

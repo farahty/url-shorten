@@ -77,22 +77,6 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   link.CreatedAt,
 	}
 
-	if link.OGTitle != nil || link.OGDesc != nil || link.OGImage != nil || link.OGSite != nil {
-		resp.OG = &model.OGData{}
-		if link.OGTitle != nil {
-			resp.OG.Title = *link.OGTitle
-		}
-		if link.OGDesc != nil {
-			resp.OG.Description = *link.OGDesc
-		}
-		if link.OGImage != nil {
-			resp.OG.Image = *link.OGImage
-		}
-		if link.OGSite != nil {
-			resp.OG.SiteName = *link.OGSite
-		}
-	}
-
 	jsonResponse(w, resp, http.StatusCreated)
 }
 

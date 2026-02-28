@@ -117,22 +117,6 @@ func (s *LinkService) Create(ctx context.Context, req model.CreateLinkRequest, a
 		link.ExpiresAt = &exp
 	}
 
-	// Scrape OG metadata
-	if og := s.scraper.Scrape(ctx, req.URL); og != nil {
-		if og.Title != "" {
-			link.OGTitle = &og.Title
-		}
-		if og.Description != "" {
-			link.OGDesc = &og.Description
-		}
-		if og.Image != "" {
-			link.OGImage = &og.Image
-		}
-		if og.SiteName != "" {
-			link.OGSite = &og.SiteName
-		}
-	}
-
 	if err := s.repo.Create(ctx, link); err != nil {
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
 			return nil, ErrAliasConflict
@@ -141,6 +125,36 @@ func (s *LinkService) Create(ctx context.Context, req model.CreateLinkRequest, a
 	}
 
 	link.CreatedAt = time.Now()
+
+	// Scrape OG metadata in the background (non-blocking)
+	go func(code, rawURL string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		og := s.scraper.Scrape(ctx, rawURL)
+		if og == nil {
+			return
+		}
+		var title, desc, image, site *string
+		if og.Title != "" {
+			title = &og.Title
+		}
+		if og.Description != "" {
+			desc = &og.Description
+		}
+		if og.Image != "" {
+			image = &og.Image
+		}
+		if og.SiteName != "" {
+			site = &og.SiteName
+		}
+		if title == nil && desc == nil && image == nil && site == nil {
+			return
+		}
+		if err := s.repo.UpdateOGData(ctx, code, title, desc, image, site); err != nil {
+			log.Printf("error updating OG data for %s: %v", code, err)
+		}
+	}(link.Code, link.OriginalURL)
+
 	return link, nil
 }
 
