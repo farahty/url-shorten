@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import {
   ConflictError,
   ForbiddenError,
@@ -22,10 +23,19 @@ import type {
 } from "./types.js";
 
 function generateRequestId(): string {
-  // 16 hex chars, matches the server's safeID regex. Uses crypto.getRandomValues
-  // which is available in every supported runtime (Node >= 18, browsers, workers).
+  // 16 hex chars, matches the server's safeID regex. Prefer Web Crypto
+  // (Node >= 19, browsers, edge workers); fall back to node:crypto for the
+  // earlier Node 18.x line where globalThis.crypto isn't exposed.
   const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
+  const wc = (globalThis as { crypto?: Crypto }).crypto;
+  if (wc?.getRandomValues) {
+    wc.getRandomValues(bytes);
+  } else {
+    const nc = createRequire(import.meta.url)("node:crypto") as {
+      randomFillSync: (b: Uint8Array) => void;
+    };
+    nc.randomFillSync(bytes);
+  }
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -196,34 +206,48 @@ class LinksMethods {
   }
 
   /** List all links for the current API key */
-  async list(query?: ListLinksQuery): Promise<ListLinksResponse> {
+  async list(
+    query?: ListLinksQuery,
+    opts: { requestId?: string } = {},
+  ): Promise<ListLinksResponse> {
     return this.client.request<ListLinksResponse>("/api/v1/links", {
       auth: "apiKey",
       query: query as Record<string, string | number | undefined>,
+      requestId: opts.requestId,
     });
   }
 
   /** Get link info by code */
-  async get(code: string): Promise<LinkInfoResponse> {
+  async get(
+    code: string,
+    opts: { requestId?: string } = {},
+  ): Promise<LinkInfoResponse> {
     return this.client.request<LinkInfoResponse>(`/api/v1/links/${encodeURIComponent(code)}`, {
       auth: "apiKey",
+      requestId: opts.requestId,
     });
   }
 
   /** Delete a link by code */
-  async delete(code: string): Promise<void> {
+  async delete(code: string, opts: { requestId?: string } = {}): Promise<void> {
     return this.client.request<void>(`/api/v1/links/${encodeURIComponent(code)}`, {
       method: "DELETE",
       auth: "apiKey",
+      requestId: opts.requestId,
     });
   }
 
   /** Get QR code image for a link (returns Blob) */
-  async qr(code: string, options?: QrOptions): Promise<Blob> {
+  async qr(
+    code: string,
+    options?: QrOptions,
+    opts: { requestId?: string } = {},
+  ): Promise<Blob> {
     return this.client.request<Blob>(`/api/v1/links/${encodeURIComponent(code)}/qr`, {
       auth: "apiKey",
       raw: true,
       query: { size: options?.size },
+      requestId: opts.requestId,
     });
   }
 }
