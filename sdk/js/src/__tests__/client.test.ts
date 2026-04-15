@@ -160,4 +160,20 @@ describe("UrlShorten retry", () => {
     expect(first["X-Request-ID"]).toBe("lead-7");
     expect(second["X-Request-ID"]).toBe("lead-7");
   });
+
+  it("retries a network error then succeeds", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("fetch failed: ECONNRESET"))
+      .mockResolvedValueOnce(resp(200, { code: "abc" }));
+
+    const c = new UrlShorten({
+      baseUrl: "http://x",
+      apiKey: "k",
+      timeoutMs: 1000,
+      maxRetries: 2,
+    });
+    const out = await c.links.create({ url: "https://e" });
+    expect(out).toMatchObject({ code: "abc" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

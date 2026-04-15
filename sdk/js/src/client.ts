@@ -86,8 +86,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 function backoffMs(attempt: number): number {
-  const cap = 2000;
-  const base = 200;
+  // Tuned for realistic transient failures: pod restarts (~2–5s), brief 429
+  // bursts, and short network blips. With maxRetries=2 default, the worst-case
+  // total wait is ~5s + 5s = 10s on top of two failed requests, well under
+  // typical worker job-level timeouts.
+  const cap = 5000;
+  const base = 500;
   const exp = Math.min(cap, base * 2 ** attempt);
   return Math.floor(Math.random() * exp); // full jitter
 }
@@ -95,6 +99,18 @@ function backoffMs(attempt: number): number {
 function isRetryable(err: unknown): boolean {
   if (err instanceof TimeoutError) return true;
   if (err instanceof NetworkError) return true;
+  // Typed 4xx errors are NEVER retryable, regardless of any future status code
+  // change. Spec: "Do NOT retry on UnauthorizedError, ForbiddenError,
+  // NotFoundError, ConflictError, GoneError."
+  if (
+    err instanceof UnauthorizedError ||
+    err instanceof ForbiddenError ||
+    err instanceof NotFoundError ||
+    err instanceof ConflictError ||
+    err instanceof GoneError
+  ) {
+    return false;
+  }
   if (err instanceof UrlShortenError) {
     return err.status === 429 || (err.status >= 500 && err.status < 600);
   }
