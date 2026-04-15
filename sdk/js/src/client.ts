@@ -21,6 +21,16 @@ import type {
   UrlShortenConfig,
 } from "./types.js";
 
+function generateRequestId(): string {
+  // 16 hex chars, matches the server's safeID regex. Uses crypto.getRandomValues
+  // which is available in every supported runtime (Node >= 18, browsers, workers).
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
 // snake_case → camelCase mapping helpers
 
 function toCamelCase(str: string): string {
@@ -102,9 +112,10 @@ export class UrlShorten {
       auth?: "apiKey" | "admin";
       raw?: boolean;
       query?: Record<string, string | number | undefined>;
+      requestId?: string;
     } = {},
   ): Promise<T> {
-    const { method = "GET", body, auth, raw = false, query } = options;
+    const { method = "GET", body, auth, raw = false, query, requestId } = options;
 
     let url = `${this.baseUrl}${path}`;
     if (query) {
@@ -130,6 +141,12 @@ export class UrlShorten {
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";
     }
+
+    const rid =
+      requestId && REQUEST_ID_PATTERN.test(requestId)
+        ? requestId
+        : generateRequestId();
+    headers["X-Request-ID"] = rid;
 
     const res = await fetch(url, {
       method,
@@ -166,11 +183,15 @@ class LinksMethods {
   constructor(private readonly client: UrlShorten) {}
 
   /** Create a shortened link */
-  async create(req: CreateLinkRequest): Promise<CreateLinkResponse> {
+  async create(
+    req: CreateLinkRequest,
+    opts: { requestId?: string } = {},
+  ): Promise<CreateLinkResponse> {
     return this.client.request<CreateLinkResponse>("/api/v1/links", {
       method: "POST",
       body: req,
       auth: "apiKey",
+      requestId: opts.requestId,
     });
   }
 
