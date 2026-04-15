@@ -34,6 +34,59 @@ var (
 	}
 )
 
+// scraperIface is the subset of *scraper.OGScraper the service uses. Kept
+// narrow to make the background job testable without spinning up HTTP.
+type scraperIface interface {
+	Scrape(ctx context.Context, rawURL string) *model.OGData
+}
+
+// ogUpdater is the subset of *repository.LinkRepository used by the background
+// scrape job. nil-safe: runScrapeJob skips the DB write when updater is nil.
+type ogUpdater interface {
+	UpdateOGData(ctx context.Context, code string, title, desc, image, site *string) error
+}
+
+// runScrapeJob performs the OG scrape + DB update for a freshly created link.
+// Runs in a background goroutine; MUST recover from panics so a bad page or
+// driver panic does not take down the whole server.
+func runScrapeJob(parent context.Context, sc scraperIface, repo ogUpdater, code, rawURL string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in OG scrape goroutine for %s: %v", code, r)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+
+	og := sc.Scrape(ctx, rawURL)
+	if og == nil {
+		return
+	}
+	var title, desc, image, site *string
+	if og.Title != "" {
+		title = &og.Title
+	}
+	if og.Description != "" {
+		desc = &og.Description
+	}
+	if og.Image != "" {
+		image = &og.Image
+	}
+	if og.SiteName != "" {
+		site = &og.SiteName
+	}
+	if title == nil && desc == nil && image == nil && site == nil {
+		return
+	}
+	if repo == nil {
+		return
+	}
+	if err := repo.UpdateOGData(ctx, code, title, desc, image, site); err != nil {
+		log.Printf("error updating OG data for %s: %v", code, err)
+	}
+}
+
 type LinkService struct {
 	repo    *repository.LinkRepository
 	cache   *cache.RedisCache
@@ -126,34 +179,8 @@ func (s *LinkService) Create(ctx context.Context, req model.CreateLinkRequest, a
 
 	link.CreatedAt = time.Now()
 
-	// Scrape OG metadata in the background (non-blocking)
-	go func(code, rawURL string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		og := s.scraper.Scrape(ctx, rawURL)
-		if og == nil {
-			return
-		}
-		var title, desc, image, site *string
-		if og.Title != "" {
-			title = &og.Title
-		}
-		if og.Description != "" {
-			desc = &og.Description
-		}
-		if og.Image != "" {
-			image = &og.Image
-		}
-		if og.SiteName != "" {
-			site = &og.SiteName
-		}
-		if title == nil && desc == nil && image == nil && site == nil {
-			return
-		}
-		if err := s.repo.UpdateOGData(ctx, code, title, desc, image, site); err != nil {
-			log.Printf("error updating OG data for %s: %v", code, err)
-		}
-	}(link.Code, link.OriginalURL)
+	// Scrape OG metadata in the background (non-blocking, panic-safe).
+	go runScrapeJob(context.Background(), s.scraper, s.repo, link.Code, link.OriginalURL)
 
 	return link, nil
 }
