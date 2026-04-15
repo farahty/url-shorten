@@ -55,3 +55,37 @@ describe("UrlShorten request-id", () => {
     expect(headers["X-Request-ID"]).toMatch(/^[a-f0-9]{16}$/);
   });
 });
+
+describe("UrlShorten timeout", () => {
+  const fetchMock = vi.fn();
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("aborts the fetch after timeoutMs", async () => {
+    fetchMock.mockImplementation((_url, init: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    });
+
+    const c = new UrlShorten({
+      baseUrl: "http://x",
+      apiKey: "k",
+      timeoutMs: 20,
+      maxRetries: 0,
+    });
+
+    await expect(c.links.create({ url: "https://e" })).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+  });
+});

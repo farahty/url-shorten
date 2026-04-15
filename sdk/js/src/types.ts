@@ -7,6 +7,10 @@ export interface UrlShortenConfig {
   apiKey?: string;
   /** Admin token for admin operations (sent as Bearer token) */
   adminToken?: string;
+  /** Per-request abort timeout in milliseconds. Default: 10_000. */
+  timeoutMs?: number;
+  /** Max retries for transient failures (network errors, 5xx, 429). Default: 2. */
+  maxRetries?: number;
 }
 
 // Link types

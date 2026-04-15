@@ -3,7 +3,9 @@ import {
   ConflictError,
   ForbiddenError,
   GoneError,
+  NetworkError,
   NotFoundError,
+  TimeoutError,
   UnauthorizedError,
   UrlShortenError,
 } from "./errors.js";
@@ -100,6 +102,8 @@ export class UrlShorten {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
   private readonly adminToken?: string;
+  private readonly timeoutMs: number;
+  private readonly maxRetries: number;
 
   readonly links: LinksMethods;
   readonly admin: AdminMethods;
@@ -108,6 +112,8 @@ export class UrlShorten {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.apiKey = config.apiKey;
     this.adminToken = config.adminToken;
+    this.timeoutMs = config.timeoutMs ?? 10_000;
+    this.maxRetries = config.maxRetries ?? 2;
 
     this.links = new LinksMethods(this);
     this.admin = new AdminMethods(this);
@@ -158,11 +164,24 @@ export class UrlShorten {
         : generateRequestId();
     headers["X-Request-ID"] = rid;
 
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(mapKeysToSnake(body)) : undefined,
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(mapKeysToSnake(body)) : undefined,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if ((err as { name?: string }).name === "AbortError") {
+        throw new TimeoutError(`request to ${path} exceeded ${this.timeoutMs}ms`);
+      }
+      throw new NetworkError(`network error calling ${path}`, err);
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!res.ok) {
       let message = res.statusText;
