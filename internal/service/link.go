@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -34,9 +35,9 @@ var (
 	}
 )
 
-// scraperIface is the subset of *scraper.OGScraper the service uses. Kept
+// ogScraper is the subset of *scraper.OGScraper the service uses. Kept
 // narrow to make the background job testable without spinning up HTTP.
-type scraperIface interface {
+type ogScraper interface {
 	Scrape(ctx context.Context, rawURL string) *model.OGData
 }
 
@@ -49,10 +50,10 @@ type ogUpdater interface {
 // runScrapeJob performs the OG scrape + DB update for a freshly created link.
 // Runs in a background goroutine; MUST recover from panics so a bad page or
 // driver panic does not take down the whole server.
-func runScrapeJob(parent context.Context, sc scraperIface, repo ogUpdater, code, rawURL string) {
+func runScrapeJob(parent context.Context, sc ogScraper, repo ogUpdater, code, rawURL string) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in OG scrape goroutine for %s: %v", code, r)
+			log.Printf("panic in OG scrape goroutine code=%s url=%s: %v\n%s", code, rawURL, r, debug.Stack())
 		}
 	}()
 
