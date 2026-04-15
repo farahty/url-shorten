@@ -71,8 +71,8 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(chimw.RealIP)
 	r.Use(middleware.RequestID)
-	r.Use(requestLogger) // defined below — includes the request id
 	r.Use(chimw.Recoverer)
+	r.Use(requestLogger) // defined below — includes the request id
 	r.Use(chimw.Timeout(30 * time.Second))
 
 	// CORS
@@ -173,11 +173,14 @@ func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
+		defer func() {
+			log.Printf("rid=%s ip=%s %s %s %d %dB %s",
+				middleware.RequestIDFromContext(r.Context()),
+				r.RemoteAddr,
+				r.Method, r.URL.RequestURI(),
+				ww.Status(), ww.BytesWritten(),
+				time.Since(start))
+		}()
 		next.ServeHTTP(ww, r)
-		log.Printf("rid=%s %s %s %d %dB %s",
-			middleware.RequestIDFromContext(r.Context()),
-			r.Method, r.URL.RequestURI(),
-			ww.Status(), ww.BytesWritten(),
-			time.Since(start))
 	})
 }

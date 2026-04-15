@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"regexp"
+	"time"
 )
 
 type ctxKeyRequestID struct{}
@@ -17,7 +18,16 @@ var safeID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 func generateID() string {
 	var b [8]byte
-	_, _ = rand.Read(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand failure is essentially impossible on Linux/macOS, but if it
+		// ever happens we must not silently emit all-zeros for every request.
+		// Fall back to a nanosecond timestamp so ids remain monotonically unique.
+		ns := time.Now().UnixNano()
+		for i := 7; i >= 0; i-- {
+			b[i] = byte(ns)
+			ns >>= 8
+		}
+	}
 	return hex.EncodeToString(b[:])
 }
 
