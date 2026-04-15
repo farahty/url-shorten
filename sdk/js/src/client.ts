@@ -81,6 +81,26 @@ function mapKeysToSnake(obj: unknown): unknown {
 
 // Error factory
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function backoffMs(attempt: number): number {
+  const cap = 2000;
+  const base = 200;
+  const exp = Math.min(cap, base * 2 ** attempt);
+  return Math.floor(Math.random() * exp); // full jitter
+}
+
+function isRetryable(err: unknown): boolean {
+  if (err instanceof TimeoutError) return true;
+  if (err instanceof NetworkError) return true;
+  if (err instanceof UrlShortenError) {
+    return err.status === 429 || (err.status >= 500 && err.status < 600);
+  }
+  return false;
+}
+
 function throwForStatus(status: number, message: string): never {
   switch (status) {
     case 401:
@@ -162,7 +182,36 @@ export class UrlShorten {
       requestId && REQUEST_ID_PATTERN.test(requestId)
         ? requestId
         : generateRequestId();
-    headers["X-Request-ID"] = rid;
+
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await this.performRequest<T>({
+          path,
+          url,
+          method,
+          headers: { ...headers, "X-Request-ID": rid },
+          body,
+          raw,
+        });
+      } catch (err) {
+        lastErr = err;
+        if (!isRetryable(err) || attempt === this.maxRetries) throw err;
+        await sleep(backoffMs(attempt));
+      }
+    }
+    throw lastErr;
+  }
+
+  private async performRequest<T>(args: {
+    path: string;
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: unknown;
+    raw: boolean;
+  }): Promise<T> {
+    const { path, url, method, headers, body, raw } = args;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
