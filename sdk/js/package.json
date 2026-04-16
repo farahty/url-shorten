@@ -1,6 +1,6 @@
 {
   "name": "@hubflora/url-shorten",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript client SDK for the URL Shortener API",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,7 +12,7 @@
     }
   },
   "files": [
-    "dist/**",
+    "dist",
     "README.md"
   ],
   "scripts": {
