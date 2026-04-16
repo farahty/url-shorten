@@ -21,6 +21,10 @@ type Config struct {
 	OGScrapeTimeout time.Duration
 	OGScrapeMaxBody int64
 
+	DBMinConns     int32
+	DBMaxConns     int32
+	RequestTimeout time.Duration
+
 	AdminSecret string
 }
 
@@ -35,6 +39,9 @@ func Load() *Config {
 		ClickFlushInterval: time.Duration(getEnvInt("CLICK_FLUSH_INTERVAL", 5)) * time.Second,
 		OGScrapeTimeout:    time.Duration(getEnvInt("OG_SCRAPE_TIMEOUT", 5)) * time.Second,
 		OGScrapeMaxBody:    int64(getEnvInt("OG_SCRAPE_MAX_BODY", 1048576)),
+		DBMinConns:         int32(getEnvInt("DB_MIN_CONNS", 2)),
+		DBMaxConns:         int32(getEnvInt("DB_MAX_CONNS", 20)),
+		RequestTimeout:     time.Duration(getEnvInt("REQUEST_TIMEOUT", 15)) * time.Second,
 		AdminSecret:        getEnv("ADMIN_SECRET", ""),
 	}
 }

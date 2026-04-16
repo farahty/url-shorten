@@ -32,7 +32,13 @@ func main() {
 	ctx := context.Background()
 
 	// PostgreSQL
-	dbPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	pgCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("failed to parse database url: %v", err)
+	}
+	pgCfg.MinConns = cfg.DBMinConns
+	pgCfg.MaxConns = cfg.DBMaxConns
+	dbPool, err := pgxpool.NewWithConfig(ctx, pgCfg)
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
@@ -73,7 +79,7 @@ func main() {
 	r.Use(middleware.RequestID)
 	r.Use(chimw.Recoverer)
 	r.Use(requestLogger) // defined below — includes the request id
-	r.Use(chimw.Timeout(30 * time.Second))
+	r.Use(chimw.Timeout(cfg.RequestTimeout))
 
 	// CORS
 	r.Use(cors.Handler(cors.Options{
